@@ -5,13 +5,12 @@ use strict;
 use Carp;
 use LWP::UserAgent;
 use CGI::Util qw(escape);
-use HTTP::Request::Common qw(GET);
 
 use base qw(LWP::UserAgent);
 
 use constant URL => 'dynamic.zoneedit.com/auth/dynamic.html';
 
-our $VERSION = 0.04;
+our $VERSION = 1.0;
 
 =head1 NAME
 
@@ -20,8 +19,8 @@ DNS::ZoneEdit - Update your ZoneEdit dynamic DNS entries
 =head1 SYNOPSIS
 
 This module allows you to update your ZoneEdit ( http://www.zoneedit.com/ )
-dynamic DNS records. This is done via an http get using the L<libwww-perl>
-modules.
+dynamic DNS records. This is done via an http get using the C<LWP::UserAgent>
+module.
 
 	use DNS::ZoneEdit;
 
@@ -37,7 +36,7 @@ modules.
 =item DNS::ZoneEdit->new();
 
 Create a new ZoneEdit object. This is actually an inheritted L<LWP::UserAgent>
-object so you can use some of the UserAgent methods. For example,
+object so you can use any of the methods defined in that class. For example,
 if you are behind a proxy server:
 
 	my $ze = DNS::ZoneEdit->new();
@@ -56,13 +55,41 @@ sub new {
 sub _can_do_https {
 	eval "use Crypt::SSLeay";
 
-	if ($@) {
-		return;
-	} else {
-		return 1;
-	}
+	return ($@ eq "");
 }
 
+
+sub _make_request_url {
+	my ($self,%args) = @_;
+
+	my %get;
+	while (my ($k,$v) = each %args) {
+		if    ( $k eq "username" ) { $self->{"username"} = $v }
+		elsif ( $k eq "password" ) { $self->{"password"} = $v }
+		elsif ( $k eq "hostname" ) { $get{host} = $v         }
+		elsif ( $k eq "myip"     ) { $get{dnsto} = $v        }
+		elsif ( $k eq "tld"      ) { $get{zones} = $v        }
+		elsif ( $k eq "secure"   ) { $self->{"secure"} = $v   }
+		else { carp "update(): Bad argument $k" }
+	}
+
+	if (defined $self->{secure}) {
+		if ($self->{secure} && ! _can_do_https()) {
+			croak "Can't run in secure mode - try installing Crypt::SSLeay";
+		}
+	} else {
+	    $self->{secure} = _can_do_https();
+    }
+
+	if ( !$self->{secure} ) {
+		carp "** USING INSECURE MODE - PLEASE READ THE DOCUMENTATION **\n";
+	}
+
+	## Make the GET request URL.
+	my $proto = $self->{"secure"} ? "https://" : "http://";
+	my $query = join('&', map { escape($_)."=".escape($get{$_}) } keys %get);
+	return $proto . URL() . "?" . $query;
+}
 
 =item update(%args);
 
@@ -103,49 +130,20 @@ sets C<$@>.
 =cut
 
 sub update {
-	my ($obj,%args) = @_;
-
-	my %get;
-	while (my ($k,$v) = each %args) {
-		if    ( $k eq "username" ) { $obj->{"username"} = $v }
-		elsif ( $k eq "password" ) { $obj->{"password"} = $v }
-		elsif ( $k eq "hostname" ) { $get{host} = $v         }
-		elsif ( $k eq "myip"     ) { $get{dnsto} = $v        }
-		elsif ( $k eq "tld"      ) { $get{zones} = $v        }
-		elsif ( $k eq "secure"   ) { $obj->{"secure"} = $v   }
-		else { carp "update(): Bad argument $k" }
-	}
+	my ($self,%args) = @_;
 
 	croak "update(): Argument 'username' is required" 
-		unless defined $obj->{"username"};
+		unless defined $args{"username"};
 
 	croak "update(): Argument 'password' is required" 
-		unless defined $obj->{"password"};
+		unless defined $args{"password"};
 
 	croak "update(): Argument 'hostname' is required" 
 		unless defined $args{"hostname"};
 
-	if (defined $obj->{"secure"}) {
-		if ($obj->{"secure"} && ! _can_do_https()) {
-			croak "Can't run in secure mode - try installing Crypt::SSLeay"
-		}
-	} else {
-		if (_can_do_https()) {
-			$obj->{"secure"} = 1;
-		} else {
-			carp "** USING INSECURE MODE - PLEASE READ THE DOCUMENTATION **\n";
-			$obj->{"secure"} = 0;
-		}
-	}
+	my $update = $self->_make_request_url(%args);
 
-	## Make the GET request URL.
-
-	my $proto = $obj->{"secure"} ? "https://" : "http://";
-
-	my $qry = join('&', map { escape($_)."=".escape($get{$_}) } keys %get);
-
-	my $resp = $obj->request(GET $proto.URL."?".$qry);
-
+	my $resp = $self->get($update);
 	if ($resp->is_success) {
 		chomp(my $content = $resp->content);
 		if ( $content =~ m/CODE="2\d+"/ ) {
@@ -162,9 +160,9 @@ sub update {
 
 =item get_basic_credentials();
 
-Since ZoneEdit object is an inheritted L<LWP::UserAgent>, it overrides
+Since a ZoneEdit object is an subclass of C<LWP::UserAgent>, it overrides
 this UserAgent method for your convenience. It uses the credentials passed
-in the constructor. There is no real reason to call, or override this method.
+in the update method. There is no real reason to call, or override this method.
 
 =cut
 

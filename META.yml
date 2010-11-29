@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name:               DNS-ZoneEdit
-version:            0.04
+version:            1
 abstract:           Update your ZoneEdit dynamic DNS records
 author:
     - Evan Giles <egiles@cpan.org>
@@ -11,8 +11,9 @@ configure_requires:
 build_requires:
     ExtUtils::MakeMaker:  0
 requires:
-    HTTP::Request::Common:  1.19
-    LWP::UserAgent:       2.001
+    LWP::UserAgent:  2.001
+resources:
+    repository:  git://github.com/egiles/dns-zoneedit.git
 no_index:
     directory:
         - t
